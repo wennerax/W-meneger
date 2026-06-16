@@ -131,18 +131,28 @@ module.exports = function registerHandlers(bot, db) {
 
     if (!db.isProtectionOn(chatId)) return;
 
-    // links
+    // links: delete message and ban sender (record warning). skip admins/mods.
     if (DELETE_LINKS && containsLink(text)) {
       try {
         await bot.deleteMessage(chatId, msg.message_id);
         db.addWarning(chatId, msg.from.id, 'Отправил ссылку', msg.from.username || null);
         const who = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
-        // mute for 1 day (86400 seconds)
+
+        // avoid banning chat administrators or bot moderators
+        let member = null;
+        try { member = await bot.getChatMember(chatId, msg.from.id); } catch (e) { member = null; }
+        if (member && (member.status === 'administrator' || member.status === 'creator')) {
+          bot.sendMessage(chatId, `${who}, ссылки здесь запрещены.`);
+          return;
+        }
+        if (typeof db.isModerator === 'function' && db.isModerator(chatId, msg.from.id)) {
+          bot.sendMessage(chatId, `${who}, ссылки здесь запрещены.`);
+          return;
+        }
+
         try {
-          const secs = 86400;
-          const until = Math.floor(Date.now() / 1000) + secs;
-          await bot.restrictChatMember(chatId, msg.from.id, { can_send_messages: false, until_date: until });
-          bot.sendMessage(chatId, `${who}, ссылки здесь запрещены. Вы заглушены на 1 день.`);
+          await bot.kickChatMember(chatId, msg.from.id);
+          bot.sendMessage(chatId, `${who}, вы были забанены за отправку ссылки.`);
         } catch (e) {
           bot.sendMessage(chatId, `${who}, ссылки здесь запрещены.`);
         }

@@ -72,7 +72,7 @@ async function resolveTarget(bot, db, chatId, identifier, reply) {
 
 module.exports = {
   async start(bot, db, msg) {
-    await bot.sendMessage(msg.chat.id, 'Привет — я защищаю этот чат. Используйте /protect_on или /protect_off для управления защитой.');
+    await bot.sendMessage(msg.chat.id, 'Привет — я бот-модератор. Удаляю ссылки, блокирую запрещённые слова и выдаю предупреждения.');
   },
 
   async help(bot, db, msg) {

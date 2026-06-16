@@ -1,5 +1,5 @@
 {
-  "Hello — I protect this chat. Use /protect_on or /protect_off to toggle.": "Привет — я защищаю этот чат. Используйте /protect_on или /protect_off для управления защитой.",
+  "Hello — I am a moderator bot. I remove links, block banned words and issue warnings.": "Привет — я бот-модератор. Удаляю ссылки, блокирую запрещённые слова и выдаю предупреждения.",
   "Only admins can change protection.": "Только админы могут менять защиту.",
   "Protection enabled": "Защита включена",
   "Protection disabled": "Защита отключена",
