@@ -6,6 +6,22 @@ module.exports = function registerHandlers(bot, db) {
   let BOT_ID = null;
   bot.getMe().then(me => { BOT_ID = me.id; }).catch(()=>{});
 
+  // Monkey-patch bot.sendMessage to apply a consistent emoji-styled decoration
+  try {
+    const { decorateMessage, detectMessageType } = require('./utils');
+    const _origSend = bot.sendMessage && bot.sendMessage.bind(bot);
+    if (_origSend) {
+      bot.sendMessage = function(chatId, text, options) {
+        try {
+          // allow callers to pass a pre-detected type via options._messageType (internal only)
+          const type = options && options._messageType ? options._messageType : detectMessageType(text || '');
+          text = decorateMessage(text, type);
+        } catch (e) { /* ignore */ }
+        return _origSend(chatId, text, options);
+      };
+    }
+  } catch (e) { /* ignore decoration errors */ }
+
   bot.onText(/\/start/, (msg) => cmds.start(bot, db, msg));
 
   // Protection is always enabled by default; protect_on/protect_off commands removed.
