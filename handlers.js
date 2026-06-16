@@ -7,13 +7,13 @@ module.exports = function registerHandlers(bot, db) {
   bot.getMe().then(me => { BOT_ID = me.id; }).catch(()=>{});
 
   bot.onText(/\/start/, (msg) => cmds.start(bot, db, msg));
+  bot.onText(/\/help/, (msg) => cmds.help(bot, db, msg));
 
-  bot.onText(/\/protect_on/, (msg) => cmds.protectOn(bot, db, msg));
-  bot.onText(/\/protect_off/, (msg) => cmds.protectOff(bot, db, msg));
+  // Protection is always enabled by default; protect_on/protect_off commands removed.
 
   bot.onText(/\/warn(?:\s+(\S+))?(?:\s+(.+))?/, (msg, match) => cmds.warn(bot, db, msg, match));
-  bot.onText(/\/ban(?:\s+(\S+))?/, (msg, match) => cmds.ban(bot, db, msg, match));
-  bot.onText(/\/mute(?:\s+(\S+))?/, (msg, match) => cmds.mute(bot, db, msg, match));
+  bot.onText(/\/ban(?:\s+(\S+))?(?:\s+(\S+))?/, (msg, match) => cmds.ban(bot, db, msg, match));
+  bot.onText(/\/mute(?:\s+(\S+))?(?:\s+(\S+))?/, (msg, match) => cmds.mute(bot, db, msg, match));
   bot.onText(/\/unmute(?:\s+(\S+))?/, (msg, match) => cmds.unmute(bot, db, msg, match));
   bot.onText(/\/list_warnings(?:\s+(\S+))?/, (msg, match) => cmds.listWarnings(bot, db, msg, match));
   bot.onText(/\/add_banned\s+(\S+)/, (msg, match) => cmds.addBanned(bot, db, msg, match));
@@ -21,6 +21,7 @@ module.exports = function registerHandlers(bot, db) {
   bot.onText(/\/list_banned/, (msg) => cmds.listBanned(bot, db, msg));
 
   bot.onText(/\/stats/, (msg) => cmds.stats ? cmds.stats(bot, db, msg) : bot.sendMessage(msg.chat.id, `Хранимые сообщения: (см. БД)`));
+  bot.onText(/\/targettime(?:\s+(\S+))?/, (msg, match) => cmds.targetTime(bot, db, msg, match));
 
   // Handle service messages (bot joins, etc.) to try to keep promotions silent
   bot.on('message', async (msg) => {
@@ -78,7 +79,16 @@ module.exports = function registerHandlers(bot, db) {
         await bot.deleteMessage(chatId, msg.message_id);
         db.addWarning(chatId, msg.from.id, 'Запрещённое слово', msg.from.username || null);
         const who2 = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
-        bot.sendMessage(chatId, `${who2}, это слово здесь запрещено.`);
+        // apply timed mute according to chat settings
+        try {
+          const secs = (typeof db.getSpamTime === 'function') ? db.getSpamTime(chatId) : 60;
+          const until = Math.floor(Date.now() / 1000) + parseInt(secs, 10);
+          await bot.restrictChatMember(chatId, msg.from.id, { can_send_messages: false, until_date: until });
+          bot.sendMessage(chatId, `${who2}, это слово здесь запрещено. Вы заглушены на ${secs} секунд.`);
+        } catch (e) {
+          // fallback: just notify
+          bot.sendMessage(chatId, `${who2}, это слово здесь запрещено.`);
+        }
       } catch (e) { }
     }
   });

@@ -43,6 +43,13 @@ if (useSqlite) {
       CREATE TABLE IF NOT EXISTS banned_words (
         word TEXT PRIMARY KEY
       );
+
+      CREATE TABLE IF NOT EXISTS chat_settings (
+        chat_id INTEGER PRIMARY KEY,
+        spam_time INTEGER DEFAULT 60,
+        mute_time INTEGER DEFAULT 3600,
+        ban_time INTEGER DEFAULT 86400
+      );
     `);
   }
 
@@ -81,6 +88,38 @@ if (useSqlite) {
 
     getBannedWords() {
       return db.prepare('SELECT word FROM banned_words').all().map(r => r.word);
+    },
+
+    setSpamTime(chatId, seconds) {
+      const stmt = db.prepare('INSERT OR REPLACE INTO chat_settings (chat_id, spam_time) VALUES (?, ?)');
+      stmt.run(chatId, seconds);
+    },
+
+    getSpamTime(chatId) {
+      const row = db.prepare('SELECT spam_time FROM chat_settings WHERE chat_id = ?').get(chatId);
+      if (!row) return 60;
+      return row.spam_time || 60;
+    },
+    setMuteTime(chatId, seconds) {
+      const stmt = db.prepare('INSERT OR REPLACE INTO chat_settings (chat_id, mute_time) VALUES (?, ?)');
+      stmt.run(chatId, seconds);
+    },
+
+    getMuteTime(chatId) {
+      const row = db.prepare('SELECT mute_time FROM chat_settings WHERE chat_id = ?').get(chatId);
+      if (!row) return 3600;
+      return row.mute_time || 3600;
+    },
+
+    setBanTime(chatId, seconds) {
+      const stmt = db.prepare('INSERT OR REPLACE INTO chat_settings (chat_id, ban_time) VALUES (?, ?)');
+      stmt.run(chatId, seconds);
+    },
+
+    getBanTime(chatId) {
+      const row = db.prepare('SELECT ban_time FROM chat_settings WHERE chat_id = ?').get(chatId);
+      if (!row) return 86400;
+      return row.ban_time || 86400;
     },
 
     getUserIdByUsername(username, chatId) {
@@ -154,6 +193,41 @@ if (useSqlite) {
 
     getBannedWords() {
       return state.banned_words.slice();
+    },
+
+    setSpamTime(chatId, seconds) {
+      if (!state.chats[chatId]) state.chats[chatId] = { protection: 1 };
+      state.chats[chatId].spam_time = seconds;
+      persist();
+    },
+
+    getSpamTime(chatId) {
+      const row = state.chats[chatId];
+      if (!row) return 60;
+      return row.spam_time || 60;
+    },
+    setMuteTime(chatId, seconds) {
+      if (!state.chats[chatId]) state.chats[chatId] = { protection: 1 };
+      state.chats[chatId].mute_time = seconds;
+      persist();
+    },
+
+    getMuteTime(chatId) {
+      const row = state.chats[chatId];
+      if (!row) return 3600;
+      return row.mute_time || 3600;
+    },
+
+    setBanTime(chatId, seconds) {
+      if (!state.chats[chatId]) state.chats[chatId] = { protection: 1 };
+      state.chats[chatId].ban_time = seconds;
+      persist();
+    },
+
+    getBanTime(chatId) {
+      const row = state.chats[chatId];
+      if (!row) return 86400;
+      return row.ban_time || 86400;
     },
 
     getUserIdByUsername(username, chatId) {
