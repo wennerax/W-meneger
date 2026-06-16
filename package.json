@@ -1,0 +1,14 @@
+{
+  "name": "telegram-chat-protector",
+  "version": "1.0.0",
+  "description": "Telegram bot to protect chats and store conversations",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^8.0.0",
+    "dotenv": "^16.0.0",
+    "node-telegram-bot-api": "^0.61.0"
+  }
+}
