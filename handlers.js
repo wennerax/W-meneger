@@ -7,7 +7,6 @@ module.exports = function registerHandlers(bot, db) {
   bot.getMe().then(me => { BOT_ID = me.id; }).catch(()=>{});
 
   bot.onText(/\/start/, (msg) => cmds.start(bot, db, msg));
-  bot.onText(/\/help/, (msg) => cmds.help(bot, db, msg));
 
   // Protection is always enabled by default; protect_on/protect_off commands removed.
 
