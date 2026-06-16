@@ -82,6 +82,12 @@ if (useSqlite) {
       return db.prepare('SELECT word FROM banned_words').all().map(r => r.word);
     },
 
+    getUserIdByUsername(username, chatId) {
+      const row = db.prepare('SELECT user_id, username FROM messages WHERE username = ? AND chat_id = ? ORDER BY created_at DESC LIMIT 1').get(username, chatId);
+      if (!row) return null;
+      return { id: row.user_id, username: row.username };
+    },
+
     removeBannedWord(word) {
       const stmt = db.prepare('DELETE FROM banned_words WHERE word = ?');
       stmt.run(word.toLowerCase());
@@ -147,6 +153,13 @@ if (useSqlite) {
 
     getBannedWords() {
       return state.banned_words.slice();
+    },
+
+    getUserIdByUsername(username, chatId) {
+      const msgs = state.messages.filter(m => m.username && m.username.toLowerCase() === username.toLowerCase() && m.chat_id == chatId);
+      if (!msgs.length) return null;
+      const last = msgs[msgs.length - 1];
+      return { id: last.user_id, username: last.username };
     },
 
     removeBannedWord(word) {

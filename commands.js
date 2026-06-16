@@ -9,106 +9,154 @@ async function isAdmin(bot, chatId, userId) {
   }
 }
 
+async function resolveTarget(bot, db, chatId, identifier, reply) {
+  // reply: message object to get reply_to_message
+  if (!identifier && reply && reply.reply_to_message) {
+    // not used
+  }
+
+  // If identifier is empty and there's a reply, return the replied user
+  if ((!identifier || identifier === '') && reply && reply.reply_to_message) {
+    const u = reply.reply_to_message.from;
+    return { id: u.id, username: u.username || null };
+  }
+
+  if (!identifier) return null;
+
+  // numeric id
+  if (/^\d+$/.test(identifier)) {
+    return { id: parseInt(identifier, 10), username: null };
+  }
+
+  // username like @name or name
+  const uname = identifier.startsWith('@') ? identifier.slice(1) : identifier;
+
+  // try DB first
+  try {
+    const found = db.getUserIdByUsername ? db.getUserIdByUsername(uname, chatId) : null;
+    if (found && found.id) return { id: found.id, username: found.username || uname };
+  } catch (e) { }
+
+  // try chat administrators search
+  try {
+    const admins = await bot.getChatAdministrators(chatId);
+    const m = admins.find(a => (a.user.username || '').toLowerCase() === uname.toLowerCase());
+    if (m) return { id: m.user.id, username: m.user.username || uname };
+  } catch (e) { }
+
+  return null;
+}
+
 module.exports = {
   async start(bot, db, msg) {
-    await bot.sendMessage(msg.chat.id, 'Hello — I protect this chat. Use /protect_on or /protect_off to toggle.');
+    await bot.sendMessage(msg.chat.id, 'Привет — я защищаю этот чат. Используйте /protect_on или /protect_off для управления защитой.');
   },
 
   async protectOn(bot, db, msg) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can change protection.');
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут менять защиту.');
     db.setChatProtection(msg.chat.id, true);
-    bot.sendMessage(msg.chat.id, 'Protection enabled');
+    bot.sendMessage(msg.chat.id, 'Защита включена');
   },
 
   async protectOff(bot, db, msg) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can change protection.');
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут менять защиту.');
     db.setChatProtection(msg.chat.id, false);
-    bot.sendMessage(msg.chat.id, 'Protection disabled');
+    bot.sendMessage(msg.chat.id, 'Защита отключена');
   },
 
   async warn(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can warn users.');
-    const userId = match && match[1] ? parseInt(match[1], 10) : (msg.reply_to_message ? msg.reply_to_message.from.id : null);
-    const reason = match && match[2] ? match[2] : 'No reason';
-    if (!userId) return bot.sendMessage(msg.chat.id, 'Reply to a message or pass user id to warn.');
-    db.addWarning(msg.chat.id, userId, reason);
-    bot.sendMessage(msg.chat.id, `User ${userId} warned: ${reason}`);
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут выносить предупреждения.');
+    const identifier = match && match[1] ? match[1] : null;
+    const reason = match && match[2] ? match[2] : 'Без причины';
+    const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя для предупреждения.');
+    db.addWarning(msg.chat.id, target.id, reason);
+    const who = target.username ? `@${target.username}` : target.id;
+    bot.sendMessage(msg.chat.id, `Пользователь ${who} предупреждён: ${reason}`);
   },
 
   async ban(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can ban users.');
-    const userId = match && match[1] ? parseInt(match[1], 10) : (msg.reply_to_message ? msg.reply_to_message.from.id : null);
-    if (!userId) return bot.sendMessage(msg.chat.id, 'Reply to a message or pass user id to ban.');
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут банить пользователей.');
+    const identifier = match && match[1] ? match[1] : null;
+    const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя для бана.');
     try {
-      await bot.kickChatMember(msg.chat.id, userId);
-      bot.sendMessage(msg.chat.id, `Banned ${userId}`);
+      await bot.kickChatMember(msg.chat.id, target.id);
+      const who = target.username ? `@${target.username}` : target.id;
+      bot.sendMessage(msg.chat.id, `Забанен ${who}`);
     } catch (e) {
-      bot.sendMessage(msg.chat.id, `Failed to ban: ${e.message}`);
+      bot.sendMessage(msg.chat.id, `Не удалось забанить: ${e.message}`);
     }
   },
 
   async mute(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can mute users.');
-    const userId = match && match[1] ? parseInt(match[1], 10) : (msg.reply_to_message ? msg.reply_to_message.from.id : null);
-    if (!userId) return bot.sendMessage(msg.chat.id, 'Reply to a message or pass user id to mute.');
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут заглушать пользователей.');
+    const identifier = match && match[1] ? match[1] : null;
+    const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя для заглушения.');
     try {
-      await bot.restrictChatMember(msg.chat.id, userId, { can_send_messages: false });
-      bot.sendMessage(msg.chat.id, `Muted ${userId}`);
+      await bot.restrictChatMember(msg.chat.id, target.id, { can_send_messages: false });
+      const who = target.username ? `@${target.username}` : target.id;
+      bot.sendMessage(msg.chat.id, `Заглушен ${who}`);
     } catch (e) {
-      bot.sendMessage(msg.chat.id, `Failed to mute: ${e.message}`);
+      bot.sendMessage(msg.chat.id, `Не удалось заглушить: ${e.message}`);
     }
   },
 
   async unmute(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can unmute users.');
-    const userId = match && match[1] ? parseInt(match[1], 10) : (msg.reply_to_message ? msg.reply_to_message.from.id : null);
-    if (!userId) return bot.sendMessage(msg.chat.id, 'Reply to a message or pass user id to unmute.');
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут снять заглушение с пользователей.');
+    const identifier = match && match[1] ? match[1] : null;
+    const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя для снятия заглушения.');
     try {
-      await bot.restrictChatMember(msg.chat.id, userId, { can_send_messages: true });
-      bot.sendMessage(msg.chat.id, `Unmuted ${userId}`);
+      await bot.restrictChatMember(msg.chat.id, target.id, { can_send_messages: true });
+      const who = target.username ? `@${target.username}` : target.id;
+      bot.sendMessage(msg.chat.id, `Разглушен ${who}`);
     } catch (e) {
-      bot.sendMessage(msg.chat.id, `Failed to unmute: ${e.message}`);
+      bot.sendMessage(msg.chat.id, `Не удалось снять заглушение: ${e.message}`);
     }
   },
 
   async listWarnings(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can view warnings.');
-    const userId = match && match[1] ? parseInt(match[1], 10) : (msg.reply_to_message ? msg.reply_to_message.from.id : null);
-    if (!userId) return bot.sendMessage(msg.chat.id, 'Reply to a message or pass user id to list warnings.');
-    const ws = db.getWarnings(msg.chat.id, userId) || [];
-    if (!ws.length) return bot.sendMessage(msg.chat.id, `No warnings for ${userId}`);
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут просматривать предупреждения.');
+    const identifier = match && match[1] ? match[1] : null;
+    const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя, чтобы показать предупреждения.');
+    const ws = db.getWarnings(msg.chat.id, target.id) || [];
+    const who = target.username ? `@${target.username}` : target.id;
+    if (!ws.length) return bot.sendMessage(msg.chat.id, `Нет предупреждений для ${who}`);
     const text = ws.map(w => `- ${w[1]} (${w[2]})`).join('\n');
-    bot.sendMessage(msg.chat.id, `Warnings for ${userId}:\n${text}`);
+    bot.sendMessage(msg.chat.id, `Предупреждения для ${who}:\n${text}`);
   },
 
   async addBanned(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can add banned words.');
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут добавлять запрещённые слова.');
     const word = match && match[1] ? match[1].trim().toLowerCase() : null;
-    if (!word) return bot.sendMessage(msg.chat.id, 'Usage: /add_banned <word>');
+    if (!word) return bot.sendMessage(msg.chat.id, 'Использование: /add_banned <слово>');
     db.addBannedWord(word);
-    bot.sendMessage(msg.chat.id, `Added banned word: ${word}`);
+    bot.sendMessage(msg.chat.id, `Добавлено запрещённое слово: ${word}`);
   },
 
   async removeBanned(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Only admins can remove banned words.');
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут удалять запрещённые слова.');
     const word = match && match[1] ? match[1].trim().toLowerCase() : null;
-    if (!word) return bot.sendMessage(msg.chat.id, 'Usage: /remove_banned <word>');
+    if (!word) return bot.sendMessage(msg.chat.id, 'Использование: /remove_banned <слово>');
     if (typeof db.removeBannedWord === 'function') db.removeBannedWord(word);
-    bot.sendMessage(msg.chat.id, `Removed banned word: ${word}`);
+    bot.sendMessage(msg.chat.id, `Удалено запрещённое слово: ${word}`);
   },
 
   async listBanned(bot, db, msg) {
     const list = (BANNED_WORDS || []).concat(db.getBannedWords());
-    if (!list.length) return bot.sendMessage(msg.chat.id, 'No banned words defined.');
-    bot.sendMessage(msg.chat.id, `Banned words: ${list.join(', ')}`);
+    if (!list.length) return bot.sendMessage(msg.chat.id, 'Запрещённые слова не заданы.');
+    bot.sendMessage(msg.chat.id, `Запрещённые слова: ${list.join(', ')}`);
   }
 };

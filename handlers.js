@@ -11,16 +11,16 @@ module.exports = function registerHandlers(bot, db) {
   bot.onText(/\/protect_on/, (msg) => cmds.protectOn(bot, db, msg));
   bot.onText(/\/protect_off/, (msg) => cmds.protectOff(bot, db, msg));
 
-  bot.onText(/\/warn(?:\s+(\d+))?(?:\s+(.+))?/, (msg, match) => cmds.warn(bot, db, msg, match));
-  bot.onText(/\/ban(?:\s+(\d+))?/, (msg, match) => cmds.ban(bot, db, msg, match));
-  bot.onText(/\/mute(?:\s+(\d+))?/, (msg, match) => cmds.mute(bot, db, msg, match));
-  bot.onText(/\/unmute(?:\s+(\d+))?/, (msg, match) => cmds.unmute(bot, db, msg, match));
-  bot.onText(/\/list_warnings(?:\s+(\d+))?/, (msg, match) => cmds.listWarnings(bot, db, msg, match));
+  bot.onText(/\/warn(?:\s+(\S+))?(?:\s+(.+))?/, (msg, match) => cmds.warn(bot, db, msg, match));
+  bot.onText(/\/ban(?:\s+(\S+))?/, (msg, match) => cmds.ban(bot, db, msg, match));
+  bot.onText(/\/mute(?:\s+(\S+))?/, (msg, match) => cmds.mute(bot, db, msg, match));
+  bot.onText(/\/unmute(?:\s+(\S+))?/, (msg, match) => cmds.unmute(bot, db, msg, match));
+  bot.onText(/\/list_warnings(?:\s+(\S+))?/, (msg, match) => cmds.listWarnings(bot, db, msg, match));
   bot.onText(/\/add_banned\s+(\S+)/, (msg, match) => cmds.addBanned(bot, db, msg, match));
   bot.onText(/\/remove_banned\s+(\S+)/, (msg, match) => cmds.removeBanned(bot, db, msg, match));
   bot.onText(/\/list_banned/, (msg) => cmds.listBanned(bot, db, msg));
 
-  bot.onText(/\/stats/, (msg) => cmds.stats ? cmds.stats(bot, db, msg) : bot.sendMessage(msg.chat.id, `Stored messages: (see DB)`));
+  bot.onText(/\/stats/, (msg) => cmds.stats ? cmds.stats(bot, db, msg) : bot.sendMessage(msg.chat.id, `Хранимые сообщения: (см. БД)`));
 
   // Handle service messages (bot joins, etc.) to try to keep promotions silent
   bot.on('message', async (msg) => {
@@ -64,8 +64,8 @@ module.exports = function registerHandlers(bot, db) {
     if (DELETE_LINKS && containsLink(text)) {
       try {
         await bot.deleteMessage(chatId, msg.message_id);
-        db.addWarning(chatId, msg.from.id, 'Sent link');
-        bot.sendMessage(chatId, `${msg.from.first_name}, links are not allowed here.`);
+        db.addWarning(chatId, msg.from.id, 'Отправил ссылку');
+        bot.sendMessage(chatId, `${msg.from.first_name}, ссылки здесь запрещены.`);
       } catch (e) { }
       return;
     }
@@ -75,8 +75,8 @@ module.exports = function registerHandlers(bot, db) {
     if (containsBanned(text, banned)) {
       try {
         await bot.deleteMessage(chatId, msg.message_id);
-        db.addWarning(chatId, msg.from.id, 'Banned word');
-        bot.sendMessage(chatId, `${msg.from.first_name}, that word is not allowed.`);
+        db.addWarning(chatId, msg.from.id, 'Запрещённое слово');
+        bot.sendMessage(chatId, `${msg.from.first_name}, это слово здесь запрещено.`);
       } catch (e) { }
     }
   });
