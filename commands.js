@@ -272,6 +272,25 @@ module.exports = {
     bot.sendMessage(msg.chat.id, `Предупреждения для ${who}:\n${text}`);
   },
 
+  async warn_limit(bot, db, msg, match) {
+    const { BOT_OWNER_ID } = require('./config');
+    const callerId = msg.from && msg.from.id;
+    const admin = await isAdmin(bot, msg.chat.id, callerId);
+    const isBotMod = typeof db.isModerator === 'function' && db.isModerator(msg.chat.id, callerId);
+    const allowed = admin || isBotMod || (BOT_OWNER_ID && callerId === BOT_OWNER_ID);
+    if (!allowed) return bot.sendMessage(msg.chat.id, 'Только админы или модераторы могут менять лимит предупреждений.');
+    const raw = match && match[1] ? match[1].trim() : null;
+    // if no argument provided, show current limit
+    if (!raw) {
+      const cur = (typeof db.getWarnLimit === 'function') ? db.getWarnLimit(msg.chat.id) : 3;
+      return bot.sendMessage(msg.chat.id, `Текущий лимит предупреждений: ${cur}`);
+    }
+    const n = parseInt(raw, 10);
+    if (isNaN(n) || n < 0) return bot.sendMessage(msg.chat.id, 'Использование: /warn_limit <число> (0 — отключить авто-бан)');
+    if (typeof db.setWarnLimit === 'function') db.setWarnLimit(msg.chat.id, n);
+    bot.sendMessage(msg.chat.id, `Лимит предупреждений установлен: ${n}`);
+  },
+
   async addBanned(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
     if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут добавлять запрещённые слова.');

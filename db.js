@@ -49,7 +49,8 @@ if (useSqlite) {
         chat_id INTEGER PRIMARY KEY,
         spam_time INTEGER DEFAULT 60,
         mute_time INTEGER DEFAULT 3600,
-        ban_time INTEGER DEFAULT 86400
+        ban_time INTEGER DEFAULT 86400,
+        warn_limit INTEGER DEFAULT 3
       );
 
       CREATE TABLE IF NOT EXISTS moderators (
@@ -170,6 +171,22 @@ if (useSqlite) {
     getRecentMessageCount(chatId, userId, seconds) {
       const row = db.prepare('SELECT COUNT(*) as c FROM messages WHERE chat_id = ? AND user_id = ? AND created_at >= datetime(\'now\', ? )').get(chatId, userId, `-${seconds} seconds`);
       return row ? row.c : 0;
+    },
+
+    getWarningCount(chatId, userId) {
+      const row = db.prepare('SELECT COUNT(*) as c FROM warnings WHERE chat_id = ? AND user_id = ?').get(chatId, userId);
+      return row ? row.c : 0;
+    },
+
+    setWarnLimit(chatId, n) {
+      const stmt = db.prepare('INSERT OR REPLACE INTO chat_settings (chat_id, warn_limit) VALUES (?, ?)');
+      stmt.run(chatId, parseInt(n, 10) || 0);
+    },
+
+    getWarnLimit(chatId) {
+      const row = db.prepare('SELECT warn_limit FROM chat_settings WHERE chat_id = ?').get(chatId);
+      if (!row) return 3;
+      return row.warn_limit || 3;
     },
 
     getRecentMessageIds(chatId, userId, seconds) {
@@ -338,6 +355,22 @@ if (useSqlite) {
     getRecentMessageCount(chatId, userId, seconds) {
       const cutoff = Date.now() - (seconds * 1000);
       return state.messages.filter(m => m.chat_id == chatId && m.user_id == userId && new Date(m.created_at).getTime() >= cutoff).length;
+    },
+
+    getWarningCount(chatId, userId) {
+      return state.warnings.filter(w => w.chat_id == chatId && w.user_id == userId).length;
+    },
+
+    setWarnLimit(chatId, n) {
+      if (!state.chats[chatId]) state.chats[chatId] = { protection: 1 };
+      state.chats[chatId].warn_limit = parseInt(n, 10) || 0;
+      persist();
+    },
+
+    getWarnLimit(chatId) {
+      const row = state.chats[chatId];
+      if (!row) return 3;
+      return row.warn_limit || 3;
     },
 
     getRecentMessageIds(chatId, userId, seconds) {

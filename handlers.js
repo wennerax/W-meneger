@@ -6,6 +6,25 @@ module.exports = function registerHandlers(bot, db) {
   let BOT_ID = null;
   bot.getMe().then(me => { BOT_ID = me.id; }).catch(()=>{});
 
+  // helper: check warning count and ban if limit reached
+  async function checkWarnAndBan(chatId, userId, username) {
+    try {
+      if (typeof db.getWarningCount !== 'function' || typeof db.getWarnLimit !== 'function') return;
+      const count = db.getWarningCount(chatId, userId);
+      const limit = db.getWarnLimit(chatId);
+      if (limit > 0 && count >= limit) {
+        try {
+          await bot.kickChatMember(chatId, userId);
+          db.addWarning(chatId, userId, `Достигнут лимит предупреждений (${limit}) — бан`, username || null);
+          const who = username ? `@${username}` : userId;
+          bot.sendMessage(chatId, `${who} забанен — превышен лимит предупреждений (${limit}).`, { _messageType: 'ban' });
+        } catch (e) {
+          // ignore ban errors
+        }
+      }
+    } catch (e) { }
+  }
+
   // Enhance bot senders: decorate text/captions and optionally send an emoji/sticker by id.
   try {
     const { decorateMessage, detectMessageType } = require('./utils');
@@ -196,6 +215,8 @@ module.exports = function registerHandlers(bot, db) {
           const until = Math.floor(Date.now() / 1000) + parseInt(secs, 10);
           await bot.restrictChatMember(chatId, msg.from.id, { can_send_messages: false, until_date: until });
           db.addWarning(chatId, msg.from.id, 'Флуд', msg.from.username || null);
+          // check and ban if warn limit reached
+          try { await checkWarnAndBan(chatId, msg.from.id, msg.from.username || null); } catch (e) { }
           const who = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
           await bot.sendMessage(chatId, `${who}, вы отправляете слишком много сообщений. Вы заглушены на 1 день.`, { _messageType: 'warn' });
         } catch (e) {
@@ -212,6 +233,7 @@ module.exports = function registerHandlers(bot, db) {
       try {
         await bot.deleteMessage(chatId, msg.message_id);
         db.addWarning(chatId, msg.from.id, 'Отправил ссылку', msg.from.username || null);
+        try { await checkWarnAndBan(chatId, msg.from.id, msg.from.username || null); } catch (e) { }
         const who = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
 
         // avoid banning chat administrators or bot moderators
@@ -242,6 +264,7 @@ module.exports = function registerHandlers(bot, db) {
       try {
         await bot.deleteMessage(chatId, msg.message_id);
         db.addWarning(chatId, msg.from.id, 'Запрещённое слово', msg.from.username || null);
+        try { await checkWarnAndBan(chatId, msg.from.id, msg.from.username || null); } catch (e) { }
         const who2 = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
         // mute for 1 day (86400 seconds)
         try {
