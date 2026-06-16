@@ -79,18 +79,44 @@ module.exports = {
     const text = [
       'Команды модерации:',
       '/help — показать это сообщение',
-      '/warn <id|@username> [reason] — выдать предупреждение',
-      '/ban <id|@username> — забанить пользователя',
-      '/mute <id|@username> — заглушить пользователя',
-      '/unmute <id|@username> — снять заглушение',
-      '/list_warnings <id|@username> — показать предупреждения пользователя',
+      '/warn @username [reason] — выдать предупреждение (или ответить на сообщение)',
+      '/ban @username <причина> <время> — забанить пользователя (время: 10m, 2h, 1d)',
+      '/mute @username <причина> <время> — заглушить пользователя (время: 10m, 2h, 1d)',
+      '/unmute @username — снять заглушение',
+      '/list_warnings @username — показать предупреждения пользователя',
       '/add_banned <word> — добавить запрещённое слово',
       '/remove_banned <word> — удалить запрещённое слово',
       '/list_banned — показать список запрещённых слов',
       '/targettime <value><unit> — задать время мута при использовании запрещённого слова (по умолчанию значение в минутах). Примеры: /targettime 10m, /targettime 2h, /targettime 1d',
+      '/aadmin @username — назначить модератора бота (только админы чата)',
+      '/radmin @username — снять у пользователя роль модератора',
       '/stats — показать простую статистику (в хранилище)'
     ].join('\n');
     bot.sendMessage(msg.chat.id, text);
+  },
+
+  async aadmin(bot, db, msg, match) {
+    const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут назначать модераторов.');
+    const identifier = match && match[1] ? match[1] : null;
+    if (!identifier) return bot.sendMessage(msg.chat.id, 'Использование: /aadmin @username');
+    const uname = identifier.startsWith('@') ? identifier.slice(1) : identifier;
+    const target = await resolveTarget(bot, db, msg.chat.id, uname, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Пользователь не найден в чате по указанному @username.');
+    db.addModerator(msg.chat.id, target.id, target.username || uname);
+    bot.sendMessage(msg.chat.id, `Пользователь @${target.username || uname} назначен модератором.`);
+  },
+
+  async radmin(bot, db, msg, match) {
+    const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
+    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут снимать роль модератора.');
+    const identifier = match && match[1] ? match[1] : null;
+    if (!identifier) return bot.sendMessage(msg.chat.id, 'Использование: /radmin @username');
+    const uname = identifier.startsWith('@') ? identifier.slice(1) : identifier;
+    const target = await resolveTarget(bot, db, msg.chat.id, uname, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Пользователь не найден в чате по указанному @username.');
+    db.removeModerator(msg.chat.id, target.id);
+    bot.sendMessage(msg.chat.id, `У пользователя @${target.username || uname} снята роль модератора.`);
   },
 
   async warn(bot, db, msg, match) {
@@ -108,16 +134,21 @@ module.exports = {
   async ban(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
     if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут банить пользователей.');
-    const identifier = match && match[1] ? match[1] : null;
-    const rawDur = match && match[2] ? match[2] : null;
-    const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
-    if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя для бана.');
+    const identifier = match && match[1] ? match[1] : null; // @username
+    const rest = match && match[2] ? match[2].trim() : '';
+    if (!identifier) return bot.sendMessage(msg.chat.id, 'Использование: /ban @username <причина> <время> — пример: /ban @ivan Спам 1d');
+    const uname = identifier.startsWith('@') ? identifier.slice(1) : identifier;
+    const target = await resolveTarget(bot, db, msg.chat.id, uname, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Пользователь не найден в чате по указанному @username.');
+    // rest must contain reason and duration (duration is last token)
+    const parts = rest.split(/\s+/);
+    if (parts.length < 2) return bot.sendMessage(msg.chat.id, 'Укажите причину и время. Пример: /ban @ivan Спам 1d');
+    const rawDur = parts.pop();
+    const reason = parts.join(' ');
     try {
       let secs = null;
-      if (rawDur) {
-        secs = parseDurationString(rawDur);
-        if (secs === null) return bot.sendMessage(msg.chat.id, 'Неверный формат времени для бана. Примеры: 10m, 2h, 1d');
-      }
+      secs = parseDurationString(rawDur);
+      if (secs === null) return bot.sendMessage(msg.chat.id, 'Неверный формат времени для бана. Примеры: 10m, 2h, 1d');
       if (secs && secs > 0) {
         const until = Math.floor(Date.now() / 1000) + parseInt(secs, 10);
         await bot.kickChatMember(msg.chat.id, target.id, { until_date: until });
@@ -126,7 +157,7 @@ module.exports = {
         await bot.kickChatMember(msg.chat.id, target.id);
       }
       const who = target.username ? `@${target.username}` : target.id;
-      bot.sendMessage(msg.chat.id, `Забанен ${who} ${secs ? `на ${formatSeconds(secs)}` : 'навсегда'}`);
+      bot.sendMessage(msg.chat.id, `Забанен ${who} на ${formatSeconds(secs)}. Причина: ${reason}`);
     } catch (e) {
       bot.sendMessage(msg.chat.id, `Не удалось забанить: ${e.message}`);
     }
@@ -135,16 +166,20 @@ module.exports = {
   async mute(bot, db, msg, match) {
     const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
     if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут заглушать пользователей.');
-    const identifier = match && match[1] ? match[1] : null;
-    const rawDur = match && match[2] ? match[2] : null;
-    const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
-    if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя для заглушения.');
+    const identifier = match && match[1] ? match[1] : null; // @username
+    const rest = match && match[2] ? match[2].trim() : '';
+    if (!identifier) return bot.sendMessage(msg.chat.id, 'Использование: /mute @username <причина> <время> — пример: /mute @ivan Оскорбления 10m');
+    const uname = identifier.startsWith('@') ? identifier.slice(1) : identifier;
+    const target = await resolveTarget(bot, db, msg.chat.id, uname, msg);
+    if (!target) return bot.sendMessage(msg.chat.id, 'Пользователь не найден в чате по указанному @username.');
+    const parts = rest.split(/\s+/);
+    if (parts.length < 2) return bot.sendMessage(msg.chat.id, 'Укажите причину и время. Пример: /mute @ivan Оскорбления 10m');
+    const rawDur = parts.pop();
+    const reason = parts.join(' ');
     try {
       let secs = null;
-      if (rawDur) {
-        secs = parseDurationString(rawDur);
-        if (secs === null) return bot.sendMessage(msg.chat.id, 'Неверный формат времени для заглушения. Примеры: 10m, 2h, 1d');
-      }
+      secs = parseDurationString(rawDur);
+      if (secs === null) return bot.sendMessage(msg.chat.id, 'Неверный формат времени для заглушения. Примеры: 10m, 2h, 1d');
       if (secs && secs > 0) {
         const until = Math.floor(Date.now() / 1000) + parseInt(secs, 10);
         await bot.restrictChatMember(msg.chat.id, target.id, { can_send_messages: false, until_date: until });
@@ -153,7 +188,7 @@ module.exports = {
         await bot.restrictChatMember(msg.chat.id, target.id, { can_send_messages: false });
       }
       const who = target.username ? `@${target.username}` : target.id;
-      bot.sendMessage(msg.chat.id, `Заглушен ${who} ${secs ? `на ${formatSeconds(secs)}` : 'навсегда'}`);
+      bot.sendMessage(msg.chat.id, `Заглушен ${who} на ${formatSeconds(secs)}. Причина: ${reason}`);
     } catch (e) {
       bot.sendMessage(msg.chat.id, `Не удалось заглушить: ${e.message}`);
     }

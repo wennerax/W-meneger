@@ -50,6 +50,13 @@ if (useSqlite) {
         mute_time INTEGER DEFAULT 3600,
         ban_time INTEGER DEFAULT 86400
       );
+
+      CREATE TABLE IF NOT EXISTS moderators (
+        chat_id INTEGER,
+        user_id INTEGER,
+        username TEXT,
+        PRIMARY KEY (chat_id, user_id)
+      );
     `);
   }
 
@@ -126,6 +133,25 @@ if (useSqlite) {
       const row = db.prepare('SELECT user_id, username FROM messages WHERE username = ? AND chat_id = ? ORDER BY created_at DESC LIMIT 1').get(username, chatId);
       if (!row) return null;
       return { id: row.user_id, username: row.username };
+    },
+
+    addModerator(chatId, userId, username) {
+      const stmt = db.prepare('INSERT OR REPLACE INTO moderators (chat_id, user_id, username) VALUES (?, ?, ?)');
+      stmt.run(chatId, userId, username || null);
+    },
+
+    removeModerator(chatId, userId) {
+      const stmt = db.prepare('DELETE FROM moderators WHERE chat_id = ? AND user_id = ?');
+      stmt.run(chatId, userId);
+    },
+
+    isModerator(chatId, userId) {
+      const row = db.prepare('SELECT 1 FROM moderators WHERE chat_id = ? AND user_id = ?').get(chatId, userId);
+      return !!row;
+    },
+
+    listModerators(chatId) {
+      return db.prepare('SELECT user_id, username FROM moderators WHERE chat_id = ?').all(chatId);
     },
 
     removeBannedWord(word) {
@@ -235,6 +261,35 @@ if (useSqlite) {
       if (!msgs.length) return null;
       const last = msgs[msgs.length - 1];
       return { id: last.user_id, username: last.username };
+    },
+
+    addModerator(chatId, userId, username) {
+      if (!state.moderators) state.moderators = {};
+      if (!state.moderators[chatId]) state.moderators[chatId] = [];
+      const exists = state.moderators[chatId].find(m => m.user_id == userId);
+      if (!exists) {
+        state.moderators[chatId].push({ user_id: userId, username: username || null });
+        persist();
+      }
+    },
+
+    removeModerator(chatId, userId) {
+      if (!state.moderators || !state.moderators[chatId]) return;
+      const idx = state.moderators[chatId].findIndex(m => m.user_id == userId);
+      if (idx !== -1) {
+        state.moderators[chatId].splice(idx, 1);
+        persist();
+      }
+    },
+
+    isModerator(chatId, userId) {
+      if (!state.moderators || !state.moderators[chatId]) return false;
+      return !!state.moderators[chatId].find(m => m.user_id == userId);
+    },
+
+    listModerators(chatId) {
+      if (!state.moderators || !state.moderators[chatId]) return [];
+      return state.moderators[chatId].slice();
     },
 
     removeBannedWord(word) {

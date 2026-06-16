@@ -12,13 +12,40 @@ module.exports = function registerHandlers(bot, db) {
   // Protection is always enabled by default; protect_on/protect_off commands removed.
 
   bot.onText(/\/warn(?:\s+(\S+))?(?:\s+(.+))?/, (msg, match) => cmds.warn(bot, db, msg, match));
-  bot.onText(/\/ban(?:\s+(\S+))?(?:\s+(\S+))?/, (msg, match) => cmds.ban(bot, db, msg, match));
-  bot.onText(/\/mute(?:\s+(\S+))?(?:\s+(\S+))?/, (msg, match) => cmds.mute(bot, db, msg, match));
+  bot.onText(/\/ban\s+(@\S+)\s+(.+)/, (msg, match) => cmds.ban(bot, db, msg, match));
+  bot.onText(/\/mute\s+(@\S+)\s+(.+)/, (msg, match) => cmds.mute(bot, db, msg, match));
   bot.onText(/\/unmute(?:\s+(\S+))?/, (msg, match) => cmds.unmute(bot, db, msg, match));
   bot.onText(/\/list_warnings(?:\s+(\S+))?/, (msg, match) => cmds.listWarnings(bot, db, msg, match));
   bot.onText(/\/add_banned\s+(\S+)/, (msg, match) => cmds.addBanned(bot, db, msg, match));
   bot.onText(/\/remove_banned\s+(\S+)/, (msg, match) => cmds.removeBanned(bot, db, msg, match));
   bot.onText(/\/list_banned/, (msg) => cmds.listBanned(bot, db, msg));
+  bot.onText(/\/aadmin\s+(@\S+)/, (msg, match) => cmds.aadmin(bot, db, msg, match));
+  bot.onText(/\/radmin\s+(@\S+)/, (msg, match) => cmds.radmin(bot, db, msg, match));
+
+  // Alternative prefixes (+) and Russian aliases
+  bot.onText(/^[\/\+]админ\s+(@\S+)/i, (msg, match) => cmds.aadmin(bot, db, msg, match));
+  bot.onText(/^[\/\+]админ\s+(@\S+)/i, (msg, match) => cmds.aadmin(bot, db, msg, match));
+  bot.onText(/^[\/\+]aadmin\s+(@\S+)/i, (msg, match) => cmds.aadmin(bot, db, msg, match));
+
+  bot.onText(/^[\/\+]размод\s+(@\S+)/i, (msg, match) => cmds.radmin(bot, db, msg, match));
+  bot.onText(/^[\/\+]radmin\s+(@\S+)/i, (msg, match) => cmds.radmin(bot, db, msg, match));
+
+  bot.onText(/^[\/\+]бан\s+(@\S+)\s+(.+)/i, (msg, match) => cmds.ban(bot, db, msg, match));
+  bot.onText(/^[\/\+]ban\s+(@\S+)\s+(.+)/i, (msg, match) => cmds.ban(bot, db, msg, match));
+
+  bot.onText(/^[\/\+]мут\s+(@\S+)\s+(.+)/i, (msg, match) => cmds.mute(bot, db, msg, match));
+  bot.onText(/^[\/\+]заглушить\s+(@\S+)\s+(.+)/i, (msg, match) => cmds.mute(bot, db, msg, match));
+  bot.onText(/^[\/\+]mute\s+(@\S+)\s+(.+)/i, (msg, match) => cmds.mute(bot, db, msg, match));
+
+  bot.onText(/^[\/\+]размут\s+(@\S+)/i, (msg, match) => cmds.unmute(bot, db, msg, match));
+  bot.onText(/^[\/\+]разглушить\s+(@\S+)/i, (msg, match) => cmds.unmute(bot, db, msg, match));
+  bot.onText(/^[\/\+]unmute\s+(@\S+)/i, (msg, match) => cmds.unmute(bot, db, msg, match));
+
+  bot.onText(/^[\/\+]пред\s+(@\S+)(?:\s+(.+))?/i, (msg, match) => cmds.warn(bot, db, msg, match));
+  bot.onText(/^[\/\+]предупр\s+(@\S+)(?:\s+(.+))?/i, (msg, match) => cmds.warn(bot, db, msg, match));
+
+  bot.onText(/^[\/\+]помощь/i, (msg) => cmds.help(bot, db, msg));
+  bot.onText(/^[\/\+]help/i, (msg) => cmds.help(bot, db, msg));
 
   bot.onText(/\/stats/, (msg) => cmds.stats ? cmds.stats(bot, db, msg) : bot.sendMessage(msg.chat.id, `Хранимые сообщения: (см. БД)`));
   bot.onText(/\/targettime(?:\s+(\S+))?/, (msg, match) => cmds.targetTime(bot, db, msg, match));
