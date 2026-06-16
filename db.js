@@ -55,6 +55,8 @@ if (useSqlite) {
         chat_id INTEGER,
         user_id INTEGER,
         username TEXT,
+        is_owner INTEGER DEFAULT 0,
+        priority INTEGER DEFAULT 0,
         PRIMARY KEY (chat_id, user_id)
       );
 
@@ -69,6 +71,14 @@ if (useSqlite) {
   }
 
   init();
+
+  // ensure new columns exist for older databases
+  try {
+    db.exec("ALTER TABLE moderators ADD COLUMN is_owner INTEGER DEFAULT 0;");
+  } catch (e) { }
+  try {
+    db.exec("ALTER TABLE moderators ADD COLUMN priority INTEGER DEFAULT 0;");
+  } catch (e) { }
 
   module.exports = {
     setChatProtection(chatId, on) {
@@ -161,9 +171,17 @@ if (useSqlite) {
       return row ? row.c : 0;
     },
 
-    addModerator(chatId, userId, username) {
-      const stmt = db.prepare('INSERT OR REPLACE INTO moderators (chat_id, user_id, username) VALUES (?, ?, ?)');
-      stmt.run(chatId, userId, username || null);
+    addModerator(chatId, userId, username, isOwner = 0, priority = 0) {
+      const stmt = db.prepare('INSERT OR REPLACE INTO moderators (chat_id, user_id, username, is_owner, priority) VALUES (?, ?, ?, ?, ?)');
+      stmt.run(chatId, userId, username || null, isOwner ? 1 : 0, priority || 0);
+    },
+
+    setMainModerator(chatId, userId, username, priority = 1000) {
+      try {
+        db.prepare('UPDATE moderators SET is_owner = 0 WHERE chat_id = ?').run(chatId);
+      } catch (e) { }
+      const stmt = db.prepare('INSERT OR REPLACE INTO moderators (chat_id, user_id, username, is_owner, priority) VALUES (?, ?, ?, ?, ?)');
+      stmt.run(chatId, userId, username || null, 1, priority);
     },
 
     removeModerator(chatId, userId) {
@@ -177,7 +195,7 @@ if (useSqlite) {
     },
 
     listModerators(chatId) {
-      return db.prepare('SELECT user_id, username FROM moderators WHERE chat_id = ?').all(chatId);
+      return db.prepare('SELECT user_id, username, is_owner, priority FROM moderators WHERE chat_id = ? ORDER BY priority DESC').all(chatId);
     },
 
     removeBannedWord(word) {
@@ -321,9 +339,25 @@ if (useSqlite) {
       if (!state.moderators[chatId]) state.moderators[chatId] = [];
       const exists = state.moderators[chatId].find(m => m.user_id == userId);
       if (!exists) {
-        state.moderators[chatId].push({ user_id: userId, username: username || null });
+        state.moderators[chatId].push({ user_id: userId, username: username || null, is_owner: 0, priority: 0 });
         persist();
       }
+    },
+
+    setMainModerator(chatId, userId, username, priority = 1000) {
+      if (!state.moderators) state.moderators = {};
+      if (!state.moderators[chatId]) state.moderators[chatId] = [];
+      // clear previous owner flags
+      state.moderators[chatId].forEach(m => { m.is_owner = 0; });
+      const exists = state.moderators[chatId].find(m => m.user_id == userId);
+      if (exists) {
+        exists.is_owner = 1;
+        exists.priority = priority;
+        exists.username = username || exists.username;
+      } else {
+        state.moderators[chatId].push({ user_id: userId, username: username || null, is_owner: 1, priority });
+      }
+      persist();
     },
 
     removeModerator(chatId, userId) {
@@ -342,7 +376,7 @@ if (useSqlite) {
 
     listModerators(chatId) {
       if (!state.moderators || !state.moderators[chatId]) return [];
-      return state.moderators[chatId].slice();
+      return state.moderators[chatId].slice().sort((a,b) => (b.priority || 0) - (a.priority || 0));
     },
 
     removeBannedWord(word) {

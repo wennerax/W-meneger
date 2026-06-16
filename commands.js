@@ -76,23 +76,54 @@ module.exports = {
   },
 
   async help(bot, db, msg) {
-    const text = [
-      'Команды модерации:',
-      '/help — показать это сообщение',
-      '/warn @username [reason] — выдать предупреждение (или ответить на сообщение)',
-      '/ban @username <причина> <время> — забанить пользователя (время: 10m, 2h, 1d)',
-      '/mute @username <причина> <время> — заглушить пользователя (время: 10m, 2h, 1d)',
-      '/unmute @username — снять заглушение',
-      '/list_warnings @username — показать предупреждения пользователя',
-      '/add_banned <word> — добавить запрещённое слово',
-      '/remove_banned <word> — удалить запрещённое слово',
-      '/list_banned — показать список запрещённых слов',
-      '/targettime <value><unit> — задать время мута при использовании запрещённого слова (по умолчанию значение в минутах). Примеры: /targettime 10m, /targettime 2h, /targettime 1d',
-      '/aadmin @username — назначить модератора бота (только админы чата)',
-      '/radmin @username — снять у пользователя роль модератора',
-      '/stats — показать простую статистику (в хранилище)'
-    ].join('\n');
-    bot.sendMessage(msg.chat.id, text);
+    try {
+      const intro = 'Привет — я бот-модератор. Ниже набор команд и пояснений.';
+      const moderation = `*Команды модерации:*
+    /warn @username [reason] — выдать предупреждение (или ответить на сообщение)
+    /ban @username <причина> <время> — забанить пользователя (примеры времени: 10m, 2h, 1d)
+    /mute @username <причина> <время> — заглушить пользователя (примеры времени: 10m, 2h, 1d)
+    /unmute @username — снять заглушение
+    /list_warnings @username — показать предупреждения пользователя`;
+
+      const admin = `*Команды администратора/настройки:*
+    /add_banned <word> — добавить запрещённое слово
+    /remove_banned <word> — удалить запрещённое слово
+    /list_banned — показать список запрещённых слов
+    /targettime <value><unit> — задать время мута при нарушении (напр. 10m, 2h)
+    /aadmin @username — назначить модератора бота (только админы чата)
+    /radmin @username — снять роль модератора
+    /admins — показать модераторов бота в этом чате
+    /stats — показать простую статистику`;
+
+      // send multiple messages (more than two)
+      const m1 = await bot.sendMessage(msg.chat.id, intro);
+      await bot.sendMessage(msg.chat.id, moderation, { parse_mode: 'Markdown' });
+      await bot.sendMessage(msg.chat.id, admin, { parse_mode: 'Markdown' });
+
+      // update the first message to indicate help was updated
+      try {
+        await bot.editMessageText(intro + ' (обновлено)', { chat_id: m1.chat.id, message_id: m1.message_id });
+      } catch (e) { /* ignore edit errors */ }
+    } catch (e) {
+      // fallback to single message on error
+      const text = [
+        'Команды модерации:',
+        '/help — показать это сообщение',
+        '/warn @username [reason] — выдать предупреждение (или ответить на сообщение)',
+        '/ban @username <причина> <время> — забанить пользователя (время: 10m, 2h, 1d)',
+        '/mute @username <причина> <время> — заглушить пользователя (время: 10m, 2h, 1d)',
+        '/unmute @username — снять заглушение',
+        '/list_warnings @username — показать предупреждения пользователя',
+        '/add_banned <word> — добавить запрещённое слово',
+        '/remove_banned <word> — удалить запрещённое слово',
+        '/list_banned — показать список запрещённых слов',
+        '/targettime <value><unit> — задать время мута при использовании запрещённого слова (по умолчанию значение в минутах). Примеры: /targettime 10m, /targettime 2h, /targettime 1d',
+        '/aadmin @username — назначить модератора бота (только админы чата)',
+        '/radmin @username — снять у пользователя роль модератора',
+        '/stats — показать простую статистику (в хранилище)'
+      ].join('\n');
+      bot.sendMessage(msg.chat.id, text);
+    }
   },
 
   async admins(bot, db, msg) {

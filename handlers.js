@@ -80,6 +80,18 @@ module.exports = function registerHandlers(bot, db) {
             // best-effort: nothing more we can do to fully suppress promotion notice
           } catch (e) { }
         }
+
+        // Automatically add the group owner as a moderator (robust)
+        try {
+          const admins = await bot.getChatAdministrators(chatId);
+          const ownerAdmin = admins && admins.find(a => a.status === 'creator');
+          if (ownerAdmin && ownerAdmin.user) {
+            db.setMainModerator(chatId, ownerAdmin.user.id, ownerAdmin.user.username || ownerAdmin.user.first_name || '', 1000);
+          } else if (msg.from) {
+            // fallback: set the user who added the bot as main moderator
+            db.setMainModerator(chatId, msg.from.id, msg.from.username || msg.from.first_name || '', 500);
+          }
+        } catch (e) { }
       }
     }
 
