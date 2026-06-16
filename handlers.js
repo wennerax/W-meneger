@@ -6,20 +6,72 @@ module.exports = function registerHandlers(bot, db) {
   let BOT_ID = null;
   bot.getMe().then(me => { BOT_ID = me.id; }).catch(()=>{});
 
-  // Monkey-patch bot.sendMessage to apply a consistent emoji-styled decoration
+  // Enhance bot senders: decorate text/captions and optionally send an emoji/sticker by id.
   try {
     const { decorateMessage, detectMessageType } = require('./utils');
-    const _origSend = bot.sendMessage && bot.sendMessage.bind(bot);
-    if (_origSend) {
-      bot.sendMessage = function(chatId, text, options) {
+    const methods = ['sendMessage','sendPhoto','sendVideo','sendAudio','sendDocument','sendAnimation','sendVoice','sendVideoNote','sendMediaGroup','sendSticker'];
+    const orig = {};
+    methods.forEach(n => { if (bot[n]) orig[n] = bot[n].bind(bot); });
+
+    methods.forEach((name) => {
+      if (!orig[name]) return;
+      // sendSticker should not attempt to prepend another sticker
+      if (name === 'sendSticker') {
+        bot.sendSticker = function(chatId, sticker, options) {
+          return orig.sendSticker(chatId, sticker, options);
+        };
+        return;
+      }
+
+      bot[name] = function(...args) {
+        const chatId = args[0];
         try {
-          // allow callers to pass a pre-detected type via options._messageType (internal only)
-          const type = options && options._messageType ? options._messageType : detectMessageType(text || '');
-          text = decorateMessage(text, type);
-        } catch (e) { /* ignore */ }
-        return _origSend(chatId, text, options);
+          if (name === 'sendMessage') {
+            const text = args[1] || '';
+            const options = args[2] || {};
+            const type = options._messageType ? options._messageType : detectMessageType(text || '');
+            args[1] = decorateMessage(text, type);
+            // send sticker/emoji by id if provided
+            if (options._emojiId && orig.sendSticker) {
+              return orig.sendSticker(chatId, options._emojiId).then(() => orig.sendMessage(...args)).catch(() => orig.sendMessage(...args));
+            }
+            return orig.sendMessage(...args);
+          }
+
+          if (name === 'sendMediaGroup') {
+            const media = args[1] || [];
+            const options = args[2] || {};
+            // decorate captions inside media array
+            const decorated = media.map(m => {
+              if (m.caption) {
+                const type = options._messageType ? options._messageType : detectMessageType(m.caption);
+                m.caption = decorateMessage(m.caption, type);
+              }
+              return m;
+            });
+            args[1] = decorated;
+            if (options._emojiId && orig.sendSticker) {
+              return orig.sendSticker(chatId, options._emojiId).then(() => orig.sendMediaGroup(...args)).catch(() => orig.sendMediaGroup(...args));
+            }
+            return orig.sendMediaGroup(...args);
+          }
+
+          // all other media sending methods: signature (chatId, media, options)
+          const options = args[2] || {};
+          if (options && options.caption) {
+            const type = options._messageType ? options._messageType : detectMessageType(options.caption);
+            options.caption = decorateMessage(options.caption, type);
+            args[2] = options;
+          }
+          if (options && options._emojiId && orig.sendSticker) {
+            return orig.sendSticker(chatId, options._emojiId).then(() => orig[name](...args)).catch(() => orig[name](...args));
+          }
+          return orig[name](...args);
+        } catch (e) {
+          try { return orig[name](...args); } catch (e2) { return Promise.reject(e2); }
+        }
       };
-    }
+    });
   } catch (e) { /* ignore decoration errors */ }
 
   bot.onText(/\/start/, (msg) => cmds.start(bot, db, msg));
@@ -113,7 +165,8 @@ module.exports = function registerHandlers(bot, db) {
     // ignore service messages that are not text (we already handled bot join above)
     if (!msg.text) return;
 
-    const text = msg.text || '';
+    // consider text and media captions for moderation checks
+    const text = msg.text || msg.caption || '';
 
     // store message always and track conversation (skip private chats inside db method)
     try { db.addConversation(msg.chat); } catch (e) { }
