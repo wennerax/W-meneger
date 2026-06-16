@@ -35,6 +35,7 @@ if (useSqlite) {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         chat_id INTEGER,
         user_id INTEGER,
+        username TEXT,
         reason TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -64,13 +65,13 @@ if (useSqlite) {
       stmt.run(chatId, userId, username || '', text || '');
     },
 
-    addWarning(chatId, userId, reason) {
-      const stmt = db.prepare('INSERT INTO warnings (chat_id, user_id, reason) VALUES (?, ?, ?)');
-      stmt.run(chatId, userId, reason || '');
+    addWarning(chatId, userId, reason, username) {
+      const stmt = db.prepare('INSERT INTO warnings (chat_id, user_id, username, reason) VALUES (?, ?, ?, ?)');
+      stmt.run(chatId, userId, username || null, reason || '');
     },
 
     getWarnings(chatId, userId) {
-      return db.prepare('SELECT id, reason, created_at FROM warnings WHERE chat_id = ? AND user_id = ?').all(chatId, userId);
+      return db.prepare('SELECT id, username, reason, created_at FROM warnings WHERE chat_id = ? AND user_id = ?').all(chatId, userId);
     },
 
     addBannedWord(word) {
@@ -134,13 +135,13 @@ if (useSqlite) {
       persist();
     },
 
-    addWarning(chatId, userId, reason) {
-      state.warnings.push({ id: state.warnings.length + 1, chat_id: chatId, user_id: userId, reason: reason || '', created_at: new Date().toISOString() });
+    addWarning(chatId, userId, reason, username) {
+      state.warnings.push({ id: state.warnings.length + 1, chat_id: chatId, user_id: userId, username: username || null, reason: reason || '', created_at: new Date().toISOString() });
       persist();
     },
 
     getWarnings(chatId, userId) {
-      return state.warnings.filter(w => w.chat_id == chatId && w.user_id == userId).map(w => [w.id, w.reason, w.created_at]);
+      return state.warnings.filter(w => w.chat_id == chatId && w.user_id == userId).map(w => ({ id: w.id, username: w.username, reason: w.reason, created_at: w.created_at }));
     },
 
     addBannedWord(word) {

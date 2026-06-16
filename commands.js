@@ -73,7 +73,7 @@ module.exports = {
     const reason = match && match[2] ? match[2] : 'Без причины';
     const target = await resolveTarget(bot, db, msg.chat.id, identifier, msg);
     if (!target) return bot.sendMessage(msg.chat.id, 'Ответьте на сообщение или укажите ID или @username пользователя для предупреждения.');
-    db.addWarning(msg.chat.id, target.id, reason);
+    db.addWarning(msg.chat.id, target.id, reason, target.username || null);
     const who = target.username ? `@${target.username}` : target.id;
     bot.sendMessage(msg.chat.id, `Пользователь ${who} предупреждён: ${reason}`);
   },

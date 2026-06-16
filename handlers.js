@@ -64,8 +64,9 @@ module.exports = function registerHandlers(bot, db) {
     if (DELETE_LINKS && containsLink(text)) {
       try {
         await bot.deleteMessage(chatId, msg.message_id);
-        db.addWarning(chatId, msg.from.id, 'Отправил ссылку');
-        bot.sendMessage(chatId, `${msg.from.first_name}, ссылки здесь запрещены.`);
+        db.addWarning(chatId, msg.from.id, 'Отправил ссылку', msg.from.username || null);
+        const who = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
+        bot.sendMessage(chatId, `${who}, ссылки здесь запрещены.`);
       } catch (e) { }
       return;
     }
@@ -75,8 +76,9 @@ module.exports = function registerHandlers(bot, db) {
     if (containsBanned(text, banned)) {
       try {
         await bot.deleteMessage(chatId, msg.message_id);
-        db.addWarning(chatId, msg.from.id, 'Запрещённое слово');
-        bot.sendMessage(chatId, `${msg.from.first_name}, это слово здесь запрещено.`);
+        db.addWarning(chatId, msg.from.id, 'Запрещённое слово', msg.from.username || null);
+        const who2 = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
+        bot.sendMessage(chatId, `${who2}, это слово здесь запрещено.`);
       } catch (e) { }
     }
   });
