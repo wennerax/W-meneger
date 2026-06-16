@@ -1,4 +1,4 @@
-const { BANNED_WORDS, DELETE_LINKS } = require('./config');
+const { BANNED_WORDS, DELETE_LINKS, MESSAGES_PER_MINUTE_THRESHOLD, FLOOD_MUTE_SECONDS } = require('./config');
 const { containsLink, containsBanned } = require('./utils');
 const cmds = require('./commands');
 
@@ -21,6 +21,9 @@ module.exports = function registerHandlers(bot, db) {
   bot.onText(/\/list_banned/, (msg) => cmds.listBanned(bot, db, msg));
   bot.onText(/\/aadmin\s+(@\S+)/, (msg, match) => cmds.aadmin(bot, db, msg, match));
   bot.onText(/\/radmin\s+(@\S+)/, (msg, match) => cmds.radmin(bot, db, msg, match));
+  bot.onText(/\/admins/, (msg) => cmds.admins(bot, db, msg));
+  bot.onText(/^!админы/i, (msg) => cmds.admins(bot, db, msg));
+  bot.onText(/^!admins/i, (msg) => cmds.admins(bot, db, msg));
 
   // Alternative prefixes (+) and Russian aliases
   bot.onText(/^[\/\+]админ\s+(@\S+)/i, (msg, match) => cmds.aadmin(bot, db, msg, match));
@@ -49,6 +52,8 @@ module.exports = function registerHandlers(bot, db) {
 
   bot.onText(/\/stats/, (msg) => cmds.stats ? cmds.stats(bot, db, msg) : bot.sendMessage(msg.chat.id, `Хранимые сообщения: (см. БД)`));
   bot.onText(/\/targettime(?:\s+(\S+))?/, (msg, match) => cmds.targetTime(bot, db, msg, match));
+  bot.onText(/\/top(?:\s+(\d+))?/, (msg, match) => cmds.top ? cmds.top(bot, db, msg, match) : bot.sendMessage(msg.chat.id, 'Нет команды top.'));
+  bot.onText(/^!топ(?:\s+(\d+))?/i, (msg, match) => cmds.top ? cmds.top(bot, db, msg, match) : bot.sendMessage(msg.chat.id, 'Нет команды top.'));
 
   // Handle service messages (bot joins, etc.) to try to keep promotions silent
   bot.on('message', async (msg) => {
@@ -83,8 +88,35 @@ module.exports = function registerHandlers(bot, db) {
 
     const text = msg.text || '';
 
-    // store message always
+    // store message always and track conversation (skip private chats inside db method)
+    try { db.addConversation(msg.chat); } catch (e) { }
     db.addMessage(chatId, msg.from.id, msg.from.username || '', text);
+
+    // flood detection: count messages in the last 60 seconds
+    try {
+      if (!msg.from || msg.from.is_bot) return;
+      // skip admins/moderators
+      let member = null;
+      try { member = await bot.getChatMember(chatId, msg.from.id); } catch (e) { member = null; }
+      if (member && (member.status === 'administrator' || member.status === 'creator')) return;
+      if (typeof db.isModerator === 'function' && db.isModerator(chatId, msg.from.id)) return;
+
+      const count = (typeof db.getRecentMessageCount === 'function') ? db.getRecentMessageCount(chatId, msg.from.id, 60) : 0;
+      if (count > (MESSAGES_PER_MINUTE_THRESHOLD || 20)) {
+        // mute for flood
+        try {
+          const secs = FLOOD_MUTE_SECONDS || 86400;
+          const until = Math.floor(Date.now() / 1000) + parseInt(secs, 10);
+          await bot.restrictChatMember(chatId, msg.from.id, { can_send_messages: false, until_date: until });
+          db.addWarning(chatId, msg.from.id, 'Флуд', msg.from.username || null);
+          const who = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
+          await bot.sendMessage(chatId, `${who}, вы отправляете слишком много сообщений. Вы заглушены на ${Math.round(secs/3600)}ч.`);
+        } catch (e) {
+          // ignore
+        }
+        return;
+      }
+    } catch (e) { }
 
     if (!db.isProtectionOn(chatId)) return;
 
@@ -94,7 +126,15 @@ module.exports = function registerHandlers(bot, db) {
         await bot.deleteMessage(chatId, msg.message_id);
         db.addWarning(chatId, msg.from.id, 'Отправил ссылку', msg.from.username || null);
         const who = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
-        bot.sendMessage(chatId, `${who}, ссылки здесь запрещены.`);
+        // mute for 1 day (86400 seconds)
+        try {
+          const secs = 86400;
+          const until = Math.floor(Date.now() / 1000) + secs;
+          await bot.restrictChatMember(chatId, msg.from.id, { can_send_messages: false, until_date: until });
+          bot.sendMessage(chatId, `${who}, ссылки здесь запрещены. Вы заглушены на 1 день.`);
+        } catch (e) {
+          bot.sendMessage(chatId, `${who}, ссылки здесь запрещены.`);
+        }
       } catch (e) { }
       return;
     }
@@ -106,14 +146,13 @@ module.exports = function registerHandlers(bot, db) {
         await bot.deleteMessage(chatId, msg.message_id);
         db.addWarning(chatId, msg.from.id, 'Запрещённое слово', msg.from.username || null);
         const who2 = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
-        // apply timed mute according to chat settings
+        // mute for 1 day (86400 seconds)
         try {
-          const secs = (typeof db.getSpamTime === 'function') ? db.getSpamTime(chatId) : 60;
-          const until = Math.floor(Date.now() / 1000) + parseInt(secs, 10);
+          const secs = 86400;
+          const until = Math.floor(Date.now() / 1000) + secs;
           await bot.restrictChatMember(chatId, msg.from.id, { can_send_messages: false, until_date: until });
-          bot.sendMessage(chatId, `${who2}, это слово здесь запрещено. Вы заглушены на ${secs} секунд.`);
+          bot.sendMessage(chatId, `${who2}, это слово здесь запрещено. Вы заглушены на 1 день.`);
         } catch (e) {
-          // fallback: just notify
           bot.sendMessage(chatId, `${who2}, это слово здесь запрещено.`);
         }
       } catch (e) { }

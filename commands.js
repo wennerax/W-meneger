@@ -95,9 +95,24 @@ module.exports = {
     bot.sendMessage(msg.chat.id, text);
   },
 
+  async admins(bot, db, msg) {
+    try {
+      const list = (typeof db.listModerators === 'function') ? db.listModerators(msg.chat.id) : [];
+      if (!list || !list.length) return bot.sendMessage(msg.chat.id, 'Модераторы бота в этом чате не назначены.');
+      const text = list.map(m => (m.username ? `@${m.username}` : m.user_id || m.id)).join('\n');
+      bot.sendMessage(msg.chat.id, `Модераторы бота в этом чате:\n${text}`);
+    } catch (e) {
+      bot.sendMessage(msg.chat.id, `Не удалось получить список модераторов: ${e.message}`);
+    }
+  },
+
   async aadmin(bot, db, msg, match) {
-    const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут назначать модераторов.');
+    const { BOT_OWNER_ID } = require('./config');
+    const callerId = msg.from && msg.from.id;
+    const admin = await isAdmin(bot, msg.chat.id, callerId);
+    const isBotMod = typeof db.isModerator === 'function' && db.isModerator(msg.chat.id, callerId);
+    const allowed = admin || isBotMod || (BOT_OWNER_ID && callerId === BOT_OWNER_ID);
+    if (!allowed) return bot.sendMessage(msg.chat.id, 'Только админы или существующие модераторы бота могут назначать модераторов.');
     const identifier = match && match[1] ? match[1] : null;
     if (!identifier) return bot.sendMessage(msg.chat.id, 'Использование: /aadmin @username');
     const uname = identifier.startsWith('@') ? identifier.slice(1) : identifier;
@@ -108,8 +123,12 @@ module.exports = {
   },
 
   async radmin(bot, db, msg, match) {
-    const admin = await isAdmin(bot, msg.chat.id, msg.from.id);
-    if (!admin) return bot.sendMessage(msg.chat.id, 'Только админы могут снимать роль модератора.');
+    const { BOT_OWNER_ID } = require('./config');
+    const callerId = msg.from && msg.from.id;
+    const admin = await isAdmin(bot, msg.chat.id, callerId);
+    const isBotMod = typeof db.isModerator === 'function' && db.isModerator(msg.chat.id, callerId);
+    const allowed = admin || isBotMod || (BOT_OWNER_ID && callerId === BOT_OWNER_ID);
+    if (!allowed) return bot.sendMessage(msg.chat.id, 'Только админы или существующие модераторы бота могут снимать роль модератора.');
     const identifier = match && match[1] ? match[1] : null;
     if (!identifier) return bot.sendMessage(msg.chat.id, 'Использование: /radmin @username');
     const uname = identifier.startsWith('@') ? identifier.slice(1) : identifier;
@@ -276,5 +295,22 @@ module.exports = {
     const list = (BANNED_WORDS || []).concat(db.getBannedWords());
     if (!list.length) return bot.sendMessage(msg.chat.id, 'Запрещённые слова не заданы.');
     bot.sendMessage(msg.chat.id, `Запрещённые слова: ${list.join(', ')}`);
+  }
+
+  ,
+  async top(bot, db, msg, match) {
+    try {
+      const limit = (match && match[1]) ? Math.max(1, Math.min(50, parseInt(match[1], 10))) : 10;
+      if (typeof db.getTopUsers !== 'function') return bot.sendMessage(msg.chat.id, 'Статистика недоступна.');
+      const list = db.getTopUsers(msg.chat.id, limit) || [];
+      if (!list.length) return bot.sendMessage(msg.chat.id, 'Нет сообщений для статистики.');
+      const lines = list.map((r, i) => {
+        const who = r.username ? `@${r.username}` : r.user_id || r.id || 'unknown';
+        return `${i+1}. ${who} — ${r.cnt || r.count || r.COUNT || r.c}`;
+      });
+      bot.sendMessage(msg.chat.id, `Топ по сообщениям (за всё время):\n${lines.join('\n')}`);
+    } catch (e) {
+      bot.sendMessage(msg.chat.id, `Не удалось получить статистику: ${e.message}`);
+    }
   }
 };

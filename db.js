@@ -57,6 +57,14 @@ if (useSqlite) {
         username TEXT,
         PRIMARY KEY (chat_id, user_id)
       );
+
+      CREATE TABLE IF NOT EXISTS conversations (
+        chat_id INTEGER PRIMARY KEY,
+        title TEXT,
+        type TEXT,
+        username TEXT,
+        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
   }
 
@@ -77,6 +85,14 @@ if (useSqlite) {
     addMessage(chatId, userId, username, text) {
       const stmt = db.prepare('INSERT INTO messages (chat_id, user_id, username, text) VALUES (?, ?, ?, ?)');
       stmt.run(chatId, userId, username || '', text || '');
+    },
+
+    addConversation(chat) {
+      try {
+        if (!chat || chat.type === 'private') return;
+        const stmt = db.prepare('INSERT OR REPLACE INTO conversations (chat_id, title, type, username, last_seen) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)');
+        stmt.run(chat.id, chat.title || '', chat.type || '', chat.username || null);
+      } catch (e) { }
     },
 
     addWarning(chatId, userId, reason, username) {
@@ -133,6 +149,16 @@ if (useSqlite) {
       const row = db.prepare('SELECT user_id, username FROM messages WHERE username = ? AND chat_id = ? ORDER BY created_at DESC LIMIT 1').get(username, chatId);
       if (!row) return null;
       return { id: row.user_id, username: row.username };
+    },
+
+    getTopUsers(chatId, limit = 10) {
+      const stmt = db.prepare('SELECT user_id, username, COUNT(*) as cnt FROM messages WHERE chat_id = ? GROUP BY user_id, username ORDER BY cnt DESC LIMIT ?');
+      return stmt.all(chatId, limit);
+    },
+
+    getRecentMessageCount(chatId, userId, seconds) {
+      const row = db.prepare('SELECT COUNT(*) as c FROM messages WHERE chat_id = ? AND user_id = ? AND created_at >= datetime(\'now\', ? )').get(chatId, userId, `-${seconds} seconds`);
+      return row ? row.c : 0;
     },
 
     addModerator(chatId, userId, username) {
@@ -200,6 +226,15 @@ if (useSqlite) {
       persist();
     },
 
+    addConversation(chat) {
+      try {
+        if (!chat || chat.type === 'private') return;
+        if (!state.conversations) state.conversations = {};
+        state.conversations[chat.id] = { chat_id: chat.id, title: chat.title || '', type: chat.type || '', username: chat.username || null, last_seen: new Date().toISOString() };
+        persist();
+      } catch (e) { }
+    },
+
     addWarning(chatId, userId, reason, username) {
       state.warnings.push({ id: state.warnings.length + 1, chat_id: chatId, user_id: userId, username: username || null, reason: reason || '', created_at: new Date().toISOString() });
       persist();
@@ -261,6 +296,24 @@ if (useSqlite) {
       if (!msgs.length) return null;
       const last = msgs[msgs.length - 1];
       return { id: last.user_id, username: last.username };
+    },
+
+    getTopUsers(chatId, limit = 10) {
+      const counts = {};
+      state.messages.forEach(m => {
+        if (m.chat_id == chatId) {
+          const key = m.user_id;
+          counts[key] = counts[key] || { user_id: m.user_id, username: m.username || null, cnt: 0 };
+          counts[key].cnt += 1;
+        }
+      });
+      const arr = Object.values(counts).sort((a,b) => b.cnt - a.cnt).slice(0, limit);
+      return arr;
+    },
+
+    getRecentMessageCount(chatId, userId, seconds) {
+      const cutoff = Date.now() - (seconds * 1000);
+      return state.messages.filter(m => m.chat_id == chatId && m.user_id == userId && new Date(m.created_at).getTime() >= cutoff).length;
     },
 
     addModerator(chatId, userId, username) {
