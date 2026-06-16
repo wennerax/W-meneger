@@ -27,6 +27,7 @@ if (useSqlite) {
         chat_id INTEGER,
         user_id INTEGER,
         username TEXT,
+        message_id INTEGER,
         text TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -92,9 +93,9 @@ if (useSqlite) {
       return !!row.protection;
     },
 
-    addMessage(chatId, userId, username, text) {
-      const stmt = db.prepare('INSERT INTO messages (chat_id, user_id, username, text) VALUES (?, ?, ?, ?)');
-      stmt.run(chatId, userId, username || '', text || '');
+    addMessage(chatId, userId, username, messageId, text) {
+      const stmt = db.prepare('INSERT INTO messages (chat_id, user_id, username, message_id, text) VALUES (?, ?, ?, ?, ?)');
+      stmt.run(chatId, userId, username || '', messageId || null, text || '');
     },
 
     addConversation(chat) {
@@ -171,6 +172,11 @@ if (useSqlite) {
       return row ? row.c : 0;
     },
 
+    getRecentMessageIds(chatId, userId, seconds) {
+      const rows = db.prepare('SELECT message_id FROM messages WHERE chat_id = ? AND user_id = ? AND created_at >= datetime(\'now\', ? ) AND message_id IS NOT NULL').all(chatId, userId, `-${seconds} seconds`);
+      return rows.map(r => r.message_id).filter(Boolean);
+    },
+
     addModerator(chatId, userId, username, isOwner = 0, priority = 0) {
       const stmt = db.prepare('INSERT OR REPLACE INTO moderators (chat_id, user_id, username, is_owner, priority) VALUES (?, ?, ?, ?, ?)');
       stmt.run(chatId, userId, username || null, isOwner ? 1 : 0, priority || 0);
@@ -239,8 +245,8 @@ if (useSqlite) {
       return !!row.protection;
     },
 
-    addMessage(chatId, userId, username, text) {
-      state.messages.push({ id: state.messages.length + 1, chat_id: chatId, user_id: userId, username: username || '', text: text || '', created_at: new Date().toISOString() });
+    addMessage(chatId, userId, username, messageId, text) {
+      state.messages.push({ id: state.messages.length + 1, chat_id: chatId, user_id: userId, username: username || '', message_id: messageId || null, text: text || '', created_at: new Date().toISOString() });
       persist();
     },
 
@@ -332,6 +338,11 @@ if (useSqlite) {
     getRecentMessageCount(chatId, userId, seconds) {
       const cutoff = Date.now() - (seconds * 1000);
       return state.messages.filter(m => m.chat_id == chatId && m.user_id == userId && new Date(m.created_at).getTime() >= cutoff).length;
+    },
+
+    getRecentMessageIds(chatId, userId, seconds) {
+      const cutoff = Date.now() - (seconds * 1000);
+      return state.messages.filter(m => m.chat_id == chatId && m.user_id == userId && new Date(m.created_at).getTime() >= cutoff).map(m => m.message_id).filter(Boolean);
     },
 
     addModerator(chatId, userId, username) {

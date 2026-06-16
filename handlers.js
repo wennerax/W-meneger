@@ -109,7 +109,6 @@ module.exports = function registerHandlers(bot, db) {
 
   bot.onText(/^[\/\+]размут\s+(@\S+)/i, (msg, match) => cmds.unmute(bot, db, msg, match));
   bot.onText(/^[\/\+]разглушить\s+(@\S+)/i, (msg, match) => cmds.unmute(bot, db, msg, match));
-  bot.onText(/^[\/\+]unmute\s+(@\S+)/i, (msg, match) => cmds.unmute(bot, db, msg, match));
 
   bot.onText(/^[\/\+]пред\s+(@\S+)(?:\s+(.+))?/i, (msg, match) => cmds.warn(bot, db, msg, match));
   bot.onText(/^[\/\+]предупр\s+(@\S+)(?:\s+(.+))?/i, (msg, match) => cmds.warn(bot, db, msg, match));
@@ -162,15 +161,15 @@ module.exports = function registerHandlers(bot, db) {
       }
     }
 
-    // ignore service messages that are not text (we already handled bot join above)
-    if (!msg.text) return;
+    // ignore service messages that are not text and have no caption
+    if (!msg.text && !msg.caption) return;
 
     // consider text and media captions for moderation checks
     const text = msg.text || msg.caption || '';
 
     // store message always and track conversation (skip private chats inside db method)
     try { db.addConversation(msg.chat); } catch (e) { }
-    db.addMessage(chatId, msg.from.id, msg.from.username || '', text);
+    try { db.addMessage(chatId, msg.from.id, msg.from.username || '', msg.message_id, text); } catch (e) { /* ignore db errors */ }
 
     // flood detection: count messages in the last 60 seconds
     try {
@@ -183,14 +182,22 @@ module.exports = function registerHandlers(bot, db) {
 
       const count = (typeof db.getRecentMessageCount === 'function') ? db.getRecentMessageCount(chatId, msg.from.id, 60) : 0;
       if (count > (MESSAGES_PER_MINUTE_THRESHOLD || 20)) {
-        // mute for flood
+        // delete recent messages from this user (best-effort) and mute for 1 day
         try {
-          const secs = FLOOD_MUTE_SECONDS || 86400;
+          const secs = 86400; // 1 day
+          // fetch recent message ids from DB (last 60s)
+          const ids = (typeof db.getRecentMessageIds === 'function') ? db.getRecentMessageIds(chatId, msg.from.id, 60) : [];
+          if (ids && ids.length) {
+            for (const mid of ids) {
+              try { await bot.deleteMessage(chatId, mid); } catch (e) { /* ignore individual delete errors */ }
+            }
+          }
+
           const until = Math.floor(Date.now() / 1000) + parseInt(secs, 10);
           await bot.restrictChatMember(chatId, msg.from.id, { can_send_messages: false, until_date: until });
           db.addWarning(chatId, msg.from.id, 'Флуд', msg.from.username || null);
           const who = msg.from.username ? `@${msg.from.username}` : msg.from.first_name;
-          await bot.sendMessage(chatId, `${who}, вы отправляете слишком много сообщений. Вы заглушены на ${Math.round(secs/3600)}ч.`);
+          await bot.sendMessage(chatId, `${who}, вы отправляете слишком много сообщений. Вы заглушены на 1 день.`, { _messageType: 'warn' });
         } catch (e) {
           // ignore
         }
@@ -215,7 +222,7 @@ module.exports = function registerHandlers(bot, db) {
           return;
         }
         if (typeof db.isModerator === 'function' && db.isModerator(chatId, msg.from.id)) {
-          bot.sendMessage(chatId, `${who}, ссылки здесь запрещены.`);
+          bot.sendMessage(chatId, `${who}, '5472267631979405211' ссылки здесь запрещены.`);
           return;
         }
 
